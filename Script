@@ -1,0 +1,279 @@
+/*
+**
+** Automated email script for use with Arizona State University package logging system
+** --------------------------------------
+** Triggers
+** --------------------------------------
+** On Form Submit
+**    - Will automatically call cleanUp to correct Column L issues for smoother printing view and dark outline of printable data area
+**
+** Time Based
+**    - Daily between 1-2 between mail shifts to send notifications from the morning mail clerks logging
+**    - Nightly between 5-6pm (when office has closed) the script will check all lines in the active sheet to verify that all emails were sent in case of error or late logging
+**
+** --------------------------------------
+** Functions
+** --------------------------------------
+** onOpen
+**    - Adds menu to give spreadsheet user easy access to manually use runAllNotifications() or change view of spreadsheet
+**
+** printView
+**   - Removes all but latest mail clerk from the view for printing
+**
+** showNormal
+**   - Hides extra columns but shows all rows
+**
+** showAll
+**   - Full view all row/col shown
+**
+** showColumns
+**   - Un-hides columns A-P
+**
+** showRows
+**   - Un-hides rows from the top to last active row in sheet
+**
+** hideColumns
+**   - runs showColumns and then hides all but columns B-C, H, L-P for printing
+**
+** hidePreviousClerks
+**   - Hides all rows except those by last clerk to log packages
+**
+** cleanUp
+**   - corrects formatting changes made by submissions via web form
+**
+** notifyPackage 
+**    - retrieves the last row of the spreadsheet and calls sendEmail helper method for the last row
+**
+** runAllNotifications
+**    - takes all rows of the active sheet and iterates through them calling helper method sendEmail for each one
+**
+** sendEmail
+**    - Helper method, takes a given row via parameter and if the email ahs not been marked as sent, assembles one and sends it
+**    - (The emails text is assembled here if it needs adjustment please edit it in this method)
+*/
+
+// add menu to access the email script from the spreadsheet directly
+function onOpen()
+{
+  SpreadsheetApp.getUi()
+       .createMenu('Las Casas Functions')
+       .addSubMenu(SpreadsheetApp.getUi().createMenu('Email')
+           .addItem('Re-Attempt Unsent Emails', 'runAllNotifications'))
+       .addSeparator()
+       .addSubMenu(SpreadsheetApp.getUi().createMenu('Change View')
+           .addItem('Print View', 'printView')
+           .addItem('Normal View', 'normalView')
+           .addItem('Full View', 'allView'))
+       .addToUi();
+}
+
+/*
+* Removes all but latest mail clerk from the view for printing
+*/ 
+function printView()
+{  
+  hideColumns();
+  hidePreviousClerks();
+}
+
+/*
+* Hides most columns but shows all rows
+*/ 
+function normalView()
+{
+  hideColumns();
+  showRows();
+}
+
+/*
+* Full view all row/col shown
+*/
+function allView()
+{
+  showColumns();
+  showRows();
+}
+
+/*
+* Makes all column (A-P) visible
+*/
+function showColumns()
+{
+  var ss = SpreadsheetApp.openById(SpreadsheetApp.getActive().getId());
+  var sheet = ss.getActiveSheet();
+  
+  sheet.showColumns(1, 15);
+}
+
+/*
+* Unhides rows from the top to last active row in sheet
+*/
+function showRows()
+{
+  var ss = SpreadsheetApp.openById(SpreadsheetApp.getActive().getId());
+  var sheet = ss.getActiveSheet();
+  var lastRow =  sheet.getLastRow();
+  
+  sheet.showRows(1, lastRow);
+}
+
+/*
+* runs show column to verify they are shown, then hides all but columns B-C, H, L-P for printing
+*/
+function hideColumns()
+{
+  //var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = SpreadsheetApp.openById(SpreadsheetApp.getActive().getId());
+  var sheet = ss.getActiveSheet();
+  
+  // unhide all to make sure no columns we want shown are
+  showColumns();
+  
+  sheet.hideColumns(4, 4); // hide column D-G
+  sheet.hideColumns(9, 3); // hide column I-K
+}
+
+/*
+* Hides all rows except those by last clerk to log packages
+*/
+function hidePreviousClerks()
+{      
+  var ss = SpreadsheetApp.openById(SpreadsheetApp.getActive().getId()); 
+  var sheet = ss.getActiveSheet();
+  
+  var rowNum = sheet.getLastRow(); // get the latest data
+  var row = sheet.getRange(rowNum, 1, 1, 4).getValues()[0]; // pull row and the 12 columns of nessesary data
+  
+  var lastClerk = row[3];
+  
+  do
+  {
+    // step back a row
+    rowNum--;
+
+    // pull current rows clerk
+    row = sheet.getRange(rowNum, 1, 1, 4).getValues()[0];
+    
+    var curClerk = row[3];
+  }
+  while(curClerk == lastClerk || rowNum < 3) // do until clerk changes
+  
+  // Hide row 2 to current to leave headers
+  sheet.hideRows(2, rowNum - 1);
+}
+
+/*
+* Sets whitespace in this buffer cell to prevent text overflow in view and changes background color to 
+*/
+function cleanUp()
+{
+  var ss = SpreadsheetApp.openById(SpreadsheetApp.getActive().getId());
+  var sheet = ss.getActiveSheet();
+  
+  var lastRow = sheet.getLastRow(); // get the latest data
+  var range = sheet.getRange(lastRow, 12);
+  var rowRange = sheet.getRange(lastRow, 1, 1, 16);
+  
+  range.setBackgroundRGB(128,128,128); // sets cell to grey background
+  range.setValue(' '); // put blank space for text overflow issues in printouts
+  rowRange.setBorder(true, true, true, true, true, true); // darken borders of cells for printouts
+}
+
+function lastRow()
+{
+  var ss = SpreadsheetApp.openById(SpreadsheetApp.getActive().getId());
+  var sheet = ss.getActiveSheet();
+  
+  return lastRow();
+}
+
+/*
+*    Runs last row through the email helper
+*/
+function notifyPackage()
+{ 
+  var ss = SpreadsheetApp.openById(SpreadsheetApp.getActive().getId());
+  var sheet = ss.getActiveSheet();
+  
+  var lastRow = sheet.getLastRow(); // get the latest data
+    
+  // fire an email for that single row
+  sendEmail(lastRow);
+}
+
+/*
+*    Runs all rows through email helper
+*/
+function runAllNotifications()
+{
+  var ss = SpreadsheetApp.openById(SpreadsheetApp.getActive().getId());
+  var sheet = ss.getActiveSheet();
+  
+  var numRows = sheet.getLastRow();   // Number of last row to process
+  
+  if(numRows <= 0)
+  {
+    // do nothing, there is no data in the sheet only the header because there are no rows to process
+  }
+  else // data appears to be valid continue operations
+  {
+    var startRow = 2;  // skip the header row
+    var curRow = startRow; // set start
+    
+    // Fetch the range of cells A2:A?
+    var dataRange = sheet.getRange(startRow, 1, numRows-(startRow-1), 1) // pulling 1 cell because this segment does not actively deal with data. Subtract one from number of rows because final row is inclusive compensating for start row
+    // Fetch values for each row in the Range.
+    var data = dataRange.getValues();
+    
+    for(i in data)
+    {   
+      sendEmail(curRow);
+      curRow++;
+    } 
+  }
+}
+
+/*
+*    Email helper that takes a row of data, assembles a personalized message with disclaimer, and attempts to email it. Marking the spreadsheet that the email has been sent if it is successful
+*
+*    rowNum - integer row number that the function will attempt to use
+*/ 
+function sendEmail(rowNum)
+{  
+  if(rowNum <= 1)
+  {
+    // there is no active data in the spreadsheet. It is reset for a new semester or blank, do nothing because the script will fail with invalid data
+  }
+  else // mail for the given row
+  {
+    var ss = SpreadsheetApp.openById(SpreadsheetApp.getActive().getId());
+    var sheet = ss.getActiveSheet();
+    
+    var row = sheet.getRange(rowNum, 1, 1, 11).getValues(); // pull row and the 12 columns of necessary data
+    var data = row[0]; // retrieve just the 1d array we want from the 2d array to make next segment more readable
+    
+    if(data[10] != "Yes") // check if the email has already been sent to prevent duplicate emails
+    {
+      var email = data[9]; // email address, validated by input form
+      var sender = data[4]; // sender
+      var name = data[2] + " " + data[1]; // first + last
+      var package = data[7]; // package type
+      var mailbox = data[6]; // mailbox number
+      
+      // **
+      // ** STATIC DISCLAIMER AND SUBJECT
+      // **
+      var subject = "Package Delivery Notification"; // set subject line
+      var disclaimer = "<Exact contents redacted from GitHub Publication>";  
+      // **  
+      // **
+      // **
+      
+      // assemble dynamic section of message offsetting 2 lines under the disclaimer
+      var message = disclaimer + " <Exact contents redacted from GitHub Publication>"; // assemble body
+      
+      MailApp.sendEmail(email, subject, message); // send assembled message to the verified address
+      sheet.getRange(rowNum, 11).setValue("Yes"); // mark that the operation was completed for this row, if script fails to send for any reason the data will not have been changed
+    }
+  }
+}
